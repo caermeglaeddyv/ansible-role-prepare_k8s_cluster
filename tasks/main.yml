@@ -1,0 +1,87 @@
+---
+# tasks file for roles/kubernetes/prepare_cluster
+- name: disable selinux
+  selinux:
+    state: disabled
+  when: ansible_selinux.status != 'disabled'
+
+- name: reboot all machines
+  reboot:
+    msg: "Rebooting machines after disabling SELinux..."
+  when: ansible_selinux.status != 'disabled'
+  tags:
+  - never
+
+- name: disable swap
+  command: /usr/sbin/swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: remove swapfile from /etc/fstab
+  mount:
+    path: swap
+    fstype: swap
+    state: absent
+
+- name: enable masquerade on kubernetes nodes
+  firewalld:
+    immediate: yes
+    permanent: yes
+    masquerade: yes
+    state: enabled
+
+- name: add br_netfilter module
+  modprobe:
+    name: br_netfilter
+    state: present
+
+- name: ensure correct sysctl values are defined
+  sysctl:
+    name: "{{ item }}"
+    value: 1
+    state: present
+    ignoreerrors: yes
+    sysctl_set: yes
+  with_items:
+  - net.ipv4.ip_forward
+  - net.bridge.bridge-nf-call-ip6tables
+  - net.bridge.bridge-nf-call-iptables
+  - vm.overcommit_memory
+
+- name: open firewall port for kubelet
+  firewalld:
+    immediate: yes
+    permanent: yes
+    port: 10250/tcp
+    state: enabled
+
+- name: ensure correct kernel.panic value is defined
+  sysctl:
+    name: kernel.panic
+    value: 10
+    state: present
+    ignoreerrors: yes
+    sysctl_set: yes
+
+- name: add k8s yum repo
+  yum_repository:
+    name: kubernetes
+    description: Kubernetes repo
+    baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+    gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+    gpgcheck: yes
+
+- name: install kubeadm, kubelet and kubectl
+  yum:
+    name:
+    - kubeadm-{{ kubernetes_version }}
+    - kubelet-{{ kubernetes_version }}
+    - kubectl-{{ kubernetes_version }}
+    state: present
+    allow_downgrade: yes
+
+- name: start kubelet
+  systemd:
+    daemon_reload: yes
+    name: kubelet
+    enabled: yes
+    state: started

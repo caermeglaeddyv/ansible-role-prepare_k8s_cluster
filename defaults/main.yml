@@ -1,0 +1,6 @@
+---
+# defaults file for roles/kubernetes/prepare_cluster
+
+
+# Version of the kubernetes components which will be installed:
+kubernetes_version: 1.14.10
